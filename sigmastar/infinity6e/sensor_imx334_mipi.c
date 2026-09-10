@@ -9,7 +9,7 @@
  * rates are derived through SetFPS; 1080p60/90/120 were hardware tested.
  * Userspace ONVIF upward-mode and codec changes remain separate concerns.
  * Failed 2K60, 3K, 2816 and 5M60 experiments are not advertised.
- * HDR entry points are deliberately not registered during initial bring-up.
+ * Only the linear entry point is registered; HDR is not supported.
  */
 
 /* SigmaStar trade secret */
@@ -167,30 +167,6 @@ static struct { // LINEAR
 	{ LINEAR_RES_4, { 1932, 1090, 3, 120 }, { 0, 4, 1920, 1080 }, { "1920x1080@90/120fps-binning" } },
 };
 
-static struct { // HDR
-    // Modify it based on number of support resolution
-    enum { HDR_RES_1 = 0,
-        HDR_RES_2,
-        HDR_RES_3,
-        HDR_RES_END } mode;
-    // Sensor Output Image info
-    struct _hsenout {
-        s32 width, height, min_fps, max_fps;
-    } senout;
-    // VIF Get Image Info
-    struct _hsensif {
-        s32 crop_start_X, crop_start_y, preview_w, preview_h;
-    } senif;
-    // Show resolution string
-    struct _hsenstr {
-        const char* strResDesc;
-    } senstr;
-} imx334_mipi_hdr[] = {
-    { HDR_RES_1, { 2592, 1944, 3, 25 }, { 4, 0, 2592, 1944 }, { "2592x1944@25fps_HDR" } }, // Modify it
-    { HDR_RES_2, { 2592, 1944, 3, 20 }, { 4, 0, 2592, 1944 }, { "2592x1944@20fps_HDR" } }, // Modify it
-    { HDR_RES_3, { 2592, 1944, 3, 30 }, { 4, 0, 2592, 1944 }, { "2592x1944@30fps_HDR" } }, // Modify it
-};
-
 #define IMX334_HDR_BRL 2228
 
 u32 Preview_line_period;
@@ -229,8 +205,6 @@ module_param(sensor_module_version, charp, S_IRUGO);
 // static int pCus_SetAEGain(ms_cus_sensor *handle, u32 gain);
 static int pCus_SetAEUSecs(ms_cus_sensor* handle, u32 us);
 static int pCus_SetOrien(ms_cus_sensor* handle, CUS_CAMSENSOR_ORIT orit);
-static int pCus_SetAEUSecsHDR_DOL_SEF1(ms_cus_sensor* handle, u32 us);
-static int pCus_SetAEUSecsHDR_DOL_LEF(ms_cus_sensor* handle, u32 us);
 
 typedef struct {
     struct {
@@ -2075,24 +2049,6 @@ static int pCus_write_init_table(ms_cus_sensor* handle,
 
 DEFINE_LINEAR_INIT(pCus_init_mipi4lane_8m30fps_linear,
 	Sensor_init_table_4lane_8m30fps)
-DEFINE_LINEAR_INIT(pCus_init_mipi4lane_5m30fps_linear,
-	Sensor_init_table_4lane_5m30fps)
-DEFINE_LINEAR_INIT(pCus_init_mipi4lane_4m30fps_linear,
-	Sensor_init_table_4lane_4m30fps)
-DEFINE_LINEAR_INIT(pCus_init_mipi4lane_binning_2m60fps_linear,
-	Sensor_init_table_4lane_binning_2m60fps)
-DEFINE_LINEAR_INIT(pCus_init_mipi4lane_cropping_2m60fps_linear,
-	Sensor_init_table_4lane_cropping_2m60fps)
-
-static int pCus_init_mipi4lane_5m60fps_linear(ms_cus_sensor* handle)
-{
-	/* Keep the complete factory 2592x1944 window and halve HMAX from
-	 * 1100 to 550.  This is deliberately experimental because the active
-	 * payload is above the documented 4K30-class Star6E pipeline budget. */
-	return pCus_write_init_table(handle,
-		Sensor_init_table_4lane_5m30fps,
-		ARRAY_SIZE(Sensor_init_table_4lane_5m30fps), 550, 0, 1, 0);
-}
 
 static int pCus_init_mipi4lane_5m45fps_linear(ms_cus_sensor* handle)
 {
@@ -2101,15 +2057,6 @@ static int pCus_init_mipi4lane_5m45fps_linear(ms_cus_sensor* handle)
 	return pCus_write_init_table(handle,
 		Sensor_init_table_4lane_5m30fps,
 		ARRAY_SIZE(Sensor_init_table_4lane_5m30fps), 734, 0, 1, 0);
-}
-
-static int pCus_init_mipi4lane_4m60fps_linear(ms_cus_sensor* handle)
-{
-	/* Keep the factory 2560x1440 window and halve HMAX from 1100 to 550.
-	 * VMAX remains 2250, yielding exactly 60 fps at the 74.25 MHz clock. */
-	return pCus_write_init_table(handle,
-		Sensor_init_table_4lane_4m30fps,
-		ARRAY_SIZE(Sensor_init_table_4lane_4m30fps), 550, 0, 1, 0);
 }
 
 static int pCus_init_mipi4lane_4m50fps_linear(ms_cus_sensor* handle)
@@ -2121,15 +2068,6 @@ static int pCus_init_mipi4lane_4m50fps_linear(ms_cus_sensor* handle)
 		ARRAY_SIZE(Sensor_init_table_4lane_4m30fps), 660, 0, 1, 0);
 }
 
-static int pCus_init_mipi4lane_binning_2m90fps_linear(ms_cus_sensor* handle)
-{
-	/* 74.25 MHz / (2250 * 367) = 89.92 fps.  Substitute HMAX and select
-	 * the factory-qualified high-speed MIPI profile. */
-	return pCus_write_init_table(handle,
-		Sensor_init_table_4lane_binning_2m60fps,
-		ARRAY_SIZE(Sensor_init_table_4lane_binning_2m60fps), 367, 0, 1, 0);
-}
-
 static int pCus_init_mipi4lane_binning_2m120fps_linear(ms_cus_sensor* handle)
 {
 	/* 74.25 MHz / (2250 * 275) = 120 fps.  The active-pixel payload rate
@@ -2138,102 +2076,6 @@ static int pCus_init_mipi4lane_binning_2m120fps_linear(ms_cus_sensor* handle)
 	return pCus_write_init_table(handle,
 		Sensor_init_table_4lane_binning_2m60fps,
 		ARRAY_SIZE(Sensor_init_table_4lane_binning_2m60fps), 275, 0, 1, 0);
-}
-
-static int pCus_init_mipi4lane_cropping_2m90fps_linear(ms_cus_sensor* handle)
-{
-	/* The factory crop has a 7.4 us line period.  VMAX=1502 therefore
-	 * produces 89.97 fps while retaining its proven HMAX=444 line time. */
-	return pCus_write_init_table(handle,
-		Sensor_init_table_4lane_cropping_2m60fps,
-		ARRAY_SIZE(Sensor_init_table_4lane_cropping_2m60fps), 0, 1502, 0, 0);
-}
-
-static int pCus_init_mipi4lane_3k60fps_linear(ms_cus_sensor* handle)
-{
-	/* 74.25 MHz / (2250 * 550) = 60 fps.  Start from the factory
-	 * 2560x1440 crop table and widen its centered non-binned window. */
-	return pCus_write_init_table(handle,
-		Sensor_init_table_4lane_4m30fps,
-		ARRAY_SIZE(Sensor_init_table_4lane_4m30fps), 550, 0, 1, 1);
-}
-
-static int pCus_init_mipi4lane_2816x1584_60fps_linear(ms_cus_sensor* handle)
-{
-	/* Same 60 fps line/frame timing as the 3K experiment, with a 15%
-	 * smaller active payload to stay closer to the Star6E ISP limit. */
-	return pCus_write_init_table(handle,
-		Sensor_init_table_4lane_4m30fps,
-		ARRAY_SIZE(Sensor_init_table_4lane_4m30fps), 550, 0, 1, 2);
-}
-
-static int pCus_init_mipi4lane5m20fps_HDR_DOL(ms_cus_sensor* handle)
-{
-    int i, cnt = 0;
-
-    SENSOR_DMSG("\n[%s]", __FUNCTION__);
-
-    for (i = 0; i < ARRAY_SIZE(Sensor_init_table_HDR_DOL_4lane5m20fps); i++) {
-        if (Sensor_init_table_HDR_DOL_4lane5m20fps[i].reg == 0xffff) {
-            SENSOR_MSLEEP(Sensor_init_table_HDR_DOL_4lane5m20fps[i].data);
-        } else {
-            cnt = 0;
-            while (SensorReg_Write(Sensor_init_table_HDR_DOL_4lane5m20fps[i].reg, Sensor_init_table_HDR_DOL_4lane5m20fps[i].data) != SUCCESS) {
-                cnt++;
-                if (cnt >= 10) {
-                    return FAIL;
-                }
-                // usleep(10*1000);
-            }
-        }
-    }
-    return SUCCESS;
-}
-
-static int pCus_init_mipi4lane5m25fps_HDR_DOL(ms_cus_sensor* handle)
-{
-    int i, cnt = 0;
-
-    SENSOR_DMSG("\n[%s]", __FUNCTION__);
-
-    for (i = 0; i < ARRAY_SIZE(Sensor_init_table_HDR_DOL_4lane5m25fps); i++) {
-        if (Sensor_init_table_HDR_DOL_4lane5m25fps[i].reg == 0xffff) {
-            SENSOR_MSLEEP(Sensor_init_table_HDR_DOL_4lane5m25fps[i].data);
-        } else {
-            cnt = 0;
-            while (SensorReg_Write(Sensor_init_table_HDR_DOL_4lane5m25fps[i].reg, Sensor_init_table_HDR_DOL_4lane5m25fps[i].data) != SUCCESS) {
-                cnt++;
-                if (cnt >= 10) {
-                    return FAIL;
-                }
-                // usleep(10*1000);
-            }
-        }
-    }
-    return SUCCESS;
-}
-
-static int pCus_init_mipi4lane5m30fps_HDR_DOL(ms_cus_sensor* handle)
-{
-    int i, cnt = 0;
-
-    SENSOR_DMSG("\n[%s]", __FUNCTION__);
-
-    for (i = 0; i < ARRAY_SIZE(Sensor_init_table_HDR_DOL_4lane5m30fps); i++) {
-        if (Sensor_init_table_HDR_DOL_4lane5m30fps[i].reg == 0xffff) {
-            SENSOR_MSLEEP(Sensor_init_table_HDR_DOL_4lane5m30fps[i].data);
-        } else {
-            cnt = 0;
-            while (SensorReg_Write(Sensor_init_table_HDR_DOL_4lane5m30fps[i].reg, Sensor_init_table_HDR_DOL_4lane5m30fps[i].data) != SUCCESS) {
-                cnt++;
-                if (cnt >= 10) {
-                    return FAIL;
-                }
-                // usleep(10*1000);
-            }
-        }
-    }
-    return SUCCESS;
 }
 
 static int pCus_GetVideoResNum(ms_cus_sensor* handle, u32* ulres_num)
@@ -2315,68 +2157,6 @@ static int pCus_SetVideoRes(ms_cus_sensor* handle, u32 res_idx)
 	params->expo.vts = vts_30fps;
 	params->expo.fps = Preview_MAX_FPS;
 	return SUCCESS;
-}
-
-static int pCus_SetVideoRes_HDR_DOL_LEF(ms_cus_sensor* handle, u32 res_idx)
-{
-    u32 num_res = handle->video_res_supported.num_res;
-    if (res_idx >= num_res) {
-        SENSOR_EMSG("[%s] Please check the number of resolutions supported by the sensor!\n", __FUNCTION__);
-        return FAIL;
-    }
-    handle->video_res_supported.ulcur_res = res_idx;
-
-    return SUCCESS;
-}
-
-static int pCus_SetVideoRes_HDR_DOL(ms_cus_sensor* handle, u32 res_idx)
-{
-    imx334_params* params = (imx334_params*)handle->private_data;
-    // ISensorIfAPI *sensor_if = &handle->sensor_if_api;
-    u32 num_res = handle->video_res_supported.num_res;
-    if (res_idx >= num_res) {
-        return FAIL;
-    }
-    switch (res_idx) {
-
-    case 0:
-        handle->video_res_supported.ulcur_res = 0;
-        handle->pCus_sensor_init = pCus_init_mipi4lane5m25fps_HDR_DOL;
-        vts_30fps_HDR_DOL = 4250;
-        params->expo.vts = vts_30fps_HDR_DOL;
-        Preview_MAX_FPS = 25;
-        params->expo.fps = Preview_MAX_FPS;
-        Preview_line_period_HDR_DOL = 9411; // 8889
-        params->max_rhs1 = 290;
-        break;
-
-    case 1:
-        handle->video_res_supported.ulcur_res = 1;
-        handle->pCus_sensor_init = pCus_init_mipi4lane5m20fps_HDR_DOL;
-        vts_30fps_HDR_DOL = 5312;
-        params->expo.vts = vts_30fps_HDR_DOL;
-        Preview_MAX_FPS = 20;
-        params->expo.fps = Preview_MAX_FPS;
-        Preview_line_period_HDR_DOL = 9411;
-        params->max_rhs1 = 290;
-        break;
-
-    case 2:
-        handle->video_res_supported.ulcur_res = 2;
-        handle->pCus_sensor_init = pCus_init_mipi4lane5m30fps_HDR_DOL;
-        vts_30fps_HDR_DOL = 4506;
-        params->expo.vts = vts_30fps_HDR_DOL;
-        Preview_MAX_FPS = 30;
-        params->expo.fps = Preview_MAX_FPS;
-        Preview_line_period_HDR_DOL = 7398;
-        params->max_rhs1 = 290;
-        break;
-
-    default:
-        break;
-    }
-
-    return SUCCESS;
 }
 
 static int pCus_GetOrien(ms_cus_sensor* handle, CUS_CAMSENSOR_ORIT* orit)
@@ -2554,44 +2334,6 @@ static int pCus_SetFPS(ms_cus_sensor* handle, u32 fps)
     return SUCCESS;
 }
 
-static int pCus_GetFPS_HDR_DOL_SEF1(ms_cus_sensor* handle)
-{
-    imx334_params* params = (imx334_params*)handle->private_data;
-    u32 max_fps = handle->video_res_supported.res[handle->video_res_supported.ulcur_res].max_fps;
-    u32 tVts = (params->tVts_reg[0].data << 16) | (params->tVts_reg[1].data << 8) | (params->tVts_reg[2].data << 0);
-
-    if (params->expo.fps >= 1000)
-        params->expo.preview_fps = (vts_30fps_HDR_DOL * max_fps * 1000) / tVts;
-    else
-        params->expo.preview_fps = (vts_30fps_HDR_DOL * max_fps) / tVts;
-
-    return params->expo.preview_fps;
-}
-
-static int pCus_SetFPS_HDR_DOL_SEF1(ms_cus_sensor* handle, u32 fps)
-{
-    imx334_params* params = (imx334_params*)handle->private_data;
-    u32 max_fps = handle->video_res_supported.res[handle->video_res_supported.ulcur_res].max_fps;
-    u32 min_fps = handle->video_res_supported.res[handle->video_res_supported.ulcur_res].min_fps;
-
-    if (fps >= min_fps && fps <= max_fps) {
-        params->expo.fps = fps;
-        params->expo.vts = (vts_30fps_HDR_DOL * (max_fps * 1000) + fps * 500) / (fps * 1000);
-    } else if ((fps >= (min_fps * 1000)) && (fps <= (max_fps * 1000))) {
-        params->expo.fps = fps;
-        params->expo.vts = (vts_30fps_HDR_DOL * (max_fps * 1000) + (fps >> 1)) / fps;
-    } else {
-        // params->expo.vts=vts_30fps;
-        // params->expo.fps=30;
-        SENSOR_DMSG("[%s] FPS %d out of range.\n", __FUNCTION__, fps);
-        return FAIL;
-    }
-    params->dirty = true; // reg need to update = true;
-    pCus_SetAEUSecsHDR_DOL_SEF1(handle, params->expo.expo_sef_us);
-
-    return SUCCESS;
-}
-
 int cus_camsensor_init_handle_linear(ms_cus_sensor* drv_handle);
 
 ///////////////////////////////////////////////////////////////////////
@@ -2621,20 +2363,6 @@ static int pCus_AEStatusNotify(ms_cus_sensor* handle, CUS_CAMSENSOR_AE_STATUS_NO
             SensorReg_Write(0x3001, 0);
             params->dirty = false;
         }
-        break;
-    default:
-        break;
-    }
-    return SUCCESS;
-}
-
-static int pCus_AEStatusNotifyHDR_DOL_SEF1(ms_cus_sensor* handle, CUS_CAMSENSOR_AE_STATUS_NOTIFY status)
-{
-    // imx334_params *params = (imx334_params *)handle->private_data;
-    switch (status) {
-    case CUS_FRAME_INACTIVE:
-        break;
-    case CUS_FRAME_ACTIVE:
         break;
     default:
         break;
@@ -2695,51 +2423,6 @@ static int pCus_SetAEUSecs(ms_cus_sensor* handle, u32 us)
     return SUCCESS;
 }
 
-static int pCus_SetAEUSecsHDR_DOL_SEF1(ms_cus_sensor* handle, u32 us)
-{
-    u32 qua_lines = 0, lines = 0, long_lines = 0, vts = 0, fsc = 0;
-    u32 rhs1 = 0, shs1 = 0, shs0 = 0;
-    imx334_params* params = (imx334_params*)handle->private_data;
-
-    params->expo.expo_sef_us = us;
-    qua_lines = (1000 * us) / Preview_line_period_HDR_DOL / 4;
-    vts = params->expo.vts;
-    shs0 = (params->tExpo_reg[0].data << 16) | (params->tExpo_reg[1].data << 8) | (params->tExpo_reg[2].data << 0);
-    fsc = vts * 2;
-    long_lines = fsc - shs0;
-    params->expo.expo_lines = long_lines;
-
-    // params->max_rhs1 = 290;
-    rhs1 = params->max_rhs1; //(params->tExpo_rhs1_reg[0].data << 16) | (params->tExpo_rhs1_reg[1].data << 8) | (params->tExpo_rhs1_reg[2].data << 0);
-
-    if (qua_lines <= 1)
-        qua_lines = 1;
-    if ((4 * qua_lines) > (rhs1 - 18))
-        qua_lines = (rhs1 - 18) / 4;
-
-    lines = 4 * qua_lines;
-    if ((rhs1 - 18) <= lines) {
-        shs1 = 18;
-    } else if ((rhs1 <= params->max_rhs1) && (rhs1 <= shs0 - 18)) {
-        shs1 = rhs1 - lines;
-        if ((shs1 < 18) || (shs1 > (rhs1 - 4))) { // Check boundary
-            // shs1 = 0;
-            // UartSendTrace("[SEF1 NG1]");
-        }
-    } else {
-        // UartSendTrace("[SEF1 NG2]");
-    }
-
-    params->tExpo_shr_dol1_reg[0].data = (shs1 >> 16) & 0x000f;
-    params->tExpo_shr_dol1_reg[1].data = (shs1 >> 8) & 0x00ff;
-    params->tExpo_shr_dol1_reg[2].data = (shs1 >> 0) & 0x00ff;
-    params->tExpo_rhs1_reg[0].data = (rhs1 >> 16) & 0x000f;
-    params->tExpo_rhs1_reg[1].data = (rhs1 >> 8) & 0x00ff;
-    params->tExpo_rhs1_reg[2].data = (rhs1 >> 0) & 0x00ff;
-
-    return SUCCESS;
-}
-
 // Gain: 1x = 1024
 static int pCus_GetAEGain(ms_cus_sensor* handle, u32* gain)
 {
@@ -2796,35 +2479,6 @@ static int pCus_SetAEGain(ms_cus_sensor* handle, u32 gain)
     return SUCCESS;
 }
 
-static void pCus_SetAEGainHDR_DOL_Calculate(u32 gain, u16* gain_reg)
-{
-    // double gain_double;
-    u64 gain_double;
-
-    if (gain < SENSOR_MIN_GAIN) {
-        gain = SENSOR_MIN_GAIN;
-    } else if (gain >= SENSOR_MAX_GAIN) {
-        gain = SENSOR_MAX_GAIN;
-    }
-    gain_double = 20 * (intlog10(gain) - intlog10(1024));
-    *gain_reg = (u16)(((gain_double * 10) >> 24) / 3) & 0x07ff;
-}
-
-static int pCus_SetAEGainHDR_DOL_SEF1(ms_cus_sensor* handle, u32 gain)
-{
-    imx334_params* params = (imx334_params*)handle->private_data;
-    u16 gain_reg = 0;
-
-    pCus_SetAEGainHDR_DOL_Calculate(gain, &gain_reg);
-    params->tGain_hdr_dol_sef_reg[0].data = gain_reg & 0x00ff;
-    params->tGain_hdr_dol_sef_reg[1].data = (gain_reg >> 8) & 0x0007;
-
-    SENSOR_DMSG("[%s] set gain/reg=%u/0x%x\n", __FUNCTION__, gain, params->tGain_hdr_dol_sef_reg[0].data);
-
-    params->dirty = true;
-    return SUCCESS;
-}
-
 static int pCus_GetAEMinMaxUSecs(ms_cus_sensor* handle, u32* min, u32* max)
 {
     *min = 1;
@@ -2850,15 +2504,6 @@ static int IMX334_GetShutterInfo(struct __ms_cus_sensor* handle, CUS_SHUTTER_INF
 static int pCus_setCaliData_gain_linearity(ms_cus_sensor* handle, CUS_GAIN_GAP_ARRAY* pArray, u32 num)
 {
 
-    return SUCCESS;
-}
-
-static int IMX334_GetShutterInfoHDR_DOL_SEF1(struct __ms_cus_sensor* handle, CUS_SHUTTER_INFO* info)
-{
-    imx334_params* params = (imx334_params*)handle->private_data;
-    info->max = Preview_line_period_HDR_DOL * params->max_rhs1;
-    info->min = (Preview_line_period_HDR_DOL * 4);
-    info->step = Preview_line_period_HDR_DOL * 4;
     return SUCCESS;
 }
 
@@ -3008,493 +2653,6 @@ int cus_camsensor_init_handle_linear(ms_cus_sensor* drv_handle)
 
     params->expo.vts = vts_30fps;
 	params->expo.expo_lines = 2000;
-    params->dirty = false;
-
-    return SUCCESS;
-}
-
-static int cus_camsensor_init_handle_hdr_dol_sef1(ms_cus_sensor* drv_handle)
-{
-    ms_cus_sensor* handle = drv_handle;
-    imx334_params* params = NULL;
-    int res;
-
-    if (!handle) {
-        SENSOR_DMSG("[%s] not enough memory!\n", __FUNCTION__);
-        return FAIL;
-    }
-    SENSOR_DMSG("[%s]", __FUNCTION__);
-    ////////////////////////////////////
-    // private data allocation & init //
-    ////////////////////////////////////
-    if (handle->private_data == NULL) {
-        SENSOR_EMSG("[%s] Private data is empty!\n", __FUNCTION__);
-        return FAIL;
-    }
-
-    params = (imx334_params*)handle->private_data;
-    memcpy(params->tExpo_rhs1_reg, expo_rhs1_reg, sizeof(expo_rhs1_reg));
-    memcpy(params->tExpo_shr_dol1_reg, expo_shr_dol1_reg, sizeof(expo_shr_dol1_reg));
-    memcpy(params->tGain_hdr_dol_sef_reg, gain_HDR_DOL_SEF1_reg, sizeof(gain_HDR_DOL_SEF1_reg));
-
-    ////////////////////////////////////
-    //    sensor model ID             //
-    ////////////////////////////////////
-    sprintf(handle->model_id, "IMX334_MIPI_HDR_SEF");
-
-    ////////////////////////////////////
-    //    i2c config                  //
-    ////////////////////////////////////
-    handle->i2c_cfg.mode = SENSOR_I2C_LEGACY; //(CUS_ISP_I2C_MODE) FALSE;
-    handle->i2c_cfg.fmt = SENSOR_I2C_FMT; // CUS_I2C_FMT_A16D16;
-    handle->i2c_cfg.address = SENSOR_I2C_ADDR; // 0x5a;
-    handle->i2c_cfg.speed = SENSOR_I2C_SPEED; // 320000;
-
-    ////////////////////////////////////
-    //    mclk                        //
-    ////////////////////////////////////
-    handle->mclk = Preview_MCLK_SPEED_HDR_DOL; // UseParaMclk(SENSOR_DRV_PARAM_MCLK());
-
-    ////////////////////////////////////
-    //    sensor interface info       //
-    ////////////////////////////////////
-    // handle->isp_type              = SENSOR_ISP_TYPE;
-    // handle->data_fmt              = SENSOR_DATAFMT;
-    handle->sif_bus = SENSOR_IFBUS_TYPE;
-    handle->data_prec = SENSOR_DATAPREC_DOL;
-    handle->data_mode = SENSOR_DATAMODE;
-    handle->bayer_id = SENSOR_BAYERID_HDR_DOL;
-    handle->RGBIR_id = SENSOR_RGBIRID;
-
-    handle->interface_attr.attr_mipi.mipi_lane_num = SENSOR_MIPI_LANE_NUM_DOL;
-    handle->interface_attr.attr_mipi.mipi_data_format = CUS_SEN_INPUT_FORMAT_RGB;
-    handle->interface_attr.attr_mipi.mipi_hsync_mode = SENSOR_MIPI_HSYNC_MODE_HDR_DOL;
-    handle->interface_attr.attr_mipi.mipi_hdr_mode = CUS_HDR_MODE_SONY_DOL;
-    handle->interface_attr.attr_mipi.mipi_hdr_virtual_channel_num = 1; // Short frame
-
-    ////////////////////////////////////
-    //    resolution capability       //
-    ////////////////////////////////////
-    handle->video_res_supported.ulcur_res = 0; // default resolution index is 0.
-    for (res = 0; res < HDR_RES_END; res++) {
-        handle->video_res_supported.num_res = res + 1;
-        handle->video_res_supported.res[res].width = imx334_mipi_hdr[res].senif.preview_w;
-        handle->video_res_supported.res[res].height = imx334_mipi_hdr[res].senif.preview_h;
-        handle->video_res_supported.res[res].max_fps = imx334_mipi_hdr[res].senout.max_fps;
-        handle->video_res_supported.res[res].min_fps = imx334_mipi_hdr[res].senout.min_fps;
-        handle->video_res_supported.res[res].crop_start_x = imx334_mipi_hdr[res].senif.crop_start_X;
-        handle->video_res_supported.res[res].crop_start_y = imx334_mipi_hdr[res].senif.crop_start_y;
-        handle->video_res_supported.res[res].nOutputWidth = imx334_mipi_hdr[res].senout.width;
-        handle->video_res_supported.res[res].nOutputHeight = imx334_mipi_hdr[res].senout.height;
-        snprintf(handle->video_res_supported.res[res].strResDesc,
-			sizeof(handle->video_res_supported.res[res].strResDesc), "%s",
-			imx334_mipi_hdr[res].senstr.strResDesc);
-    }
-
-    ////////////////////////////////////
-    //    Sensor polarity             //
-    ////////////////////////////////////
-    handle->pwdn_POLARITY = SENSOR_PWDN_POL; // CUS_CLK_POL_NEG;
-    handle->reset_POLARITY = SENSOR_RST_POL; // CUS_CLK_POL_NEG;
-    // handle->VSYNC_POLARITY              = SENSOR_VSYNC_POL; //CUS_CLK_POL_POS;
-    // handle->HSYNC_POLARITY              = SENSOR_HSYNC_POL; //CUS_CLK_POL_POS;
-    handle->PCLK_POLARITY = SENSOR_PCLK_POL; // CUS_CLK_POL_POS);    // use '!' to clear board latch error
-
-    ////////////////////////////////////////
-    // Sensor Status Control and Get Info //
-    ////////////////////////////////////////
-    handle->pCus_sensor_release = cus_camsensor_release_handle;
-    handle->pCus_sensor_init = pCus_init_mipi4lane5m25fps_HDR_DOL;
-    handle->pCus_sensor_poweron = pCus_poweron; // Need to check
-    handle->pCus_sensor_poweroff = pCus_poweroff;
-    handle->pCus_sensor_GetSensorID = pCus_GetSensorID;
-    handle->pCus_sensor_GetVideoResNum = pCus_GetVideoResNum;
-    handle->pCus_sensor_SetVideoRes = pCus_SetVideoRes_HDR_DOL;
-    handle->pCus_sensor_GetVideoRes = pCus_GetVideoRes;
-    handle->pCus_sensor_GetCurVideoRes = pCus_GetCurVideoRes;
-
-    handle->pCus_sensor_GetOrien = pCus_GetOrien; // Need to check
-    handle->pCus_sensor_SetOrien = pCus_SetOrien; // Need to check
-    handle->pCus_sensor_GetFPS = pCus_GetFPS_HDR_DOL_SEF1;
-    handle->pCus_sensor_SetFPS = pCus_SetFPS_HDR_DOL_SEF1;
-
-    ////////////////////////////////////
-    //    AE parameters               //
-    ////////////////////////////////////
-    handle->ae_gain_delay = SENSOR_GAIN_DELAY_FRAME_COUNT_HDR_DOL;
-    handle->ae_shutter_delay = SENSOR_SHUTTER_DELAY_FRAME_COUNT_HDR_DOL;
-    handle->ae_gain_ctrl_num = 2;
-    handle->ae_shutter_ctrl_num = 2;
-    handle->sat_mingain = SENSOR_MIN_GAIN; // g_sensor_ae_min_gain;
-    // handle->dgain_remainder = 0;
-
-    ////////////////////////////////////
-    //  AE Control and Get Info       //
-    ////////////////////////////////////
-    handle->pCus_sensor_AEStatusNotify = pCus_AEStatusNotifyHDR_DOL_SEF1;
-    handle->pCus_sensor_GetAEUSecs = pCus_GetAEUSecs;
-    handle->pCus_sensor_SetAEUSecs = pCus_SetAEUSecsHDR_DOL_SEF1;
-    handle->pCus_sensor_GetAEGain = pCus_GetAEGain;
-    handle->pCus_sensor_SetAEGain = pCus_SetAEGainHDR_DOL_SEF1;
-    handle->pCus_sensor_GetAEMinMaxGain = pCus_GetAEMinMaxGain;
-    handle->pCus_sensor_GetAEMinMaxUSecs = pCus_GetAEMinMaxUSecs;
-
-    handle->pCus_sensor_GetShutterInfo = IMX334_GetShutterInfoHDR_DOL_SEF1;
-    params->expo.vts = vts_30fps_HDR_DOL;
-    params->expo.expo_lines = 4250;
-    return SUCCESS;
-}
-
-// lef functions
-static int pCus_init_HDR_DOL_LEF(ms_cus_sensor* handle)
-{
-    return SUCCESS;
-}
-
-static int pCus_poweron_HDR_DOL_LEF(ms_cus_sensor* handle, u32 idx)
-{
-    return SUCCESS;
-}
-
-static int pCus_poweroff_HDR_DOL_LEF(ms_cus_sensor* handle, u32 idx)
-{
-    return SUCCESS;
-}
-
-static int pCus_GetSensorID_HDR_DOL_LEF(ms_cus_sensor* handle, u32* id)
-{
-    *id = 0;
-    return SUCCESS;
-}
-
-static int pCus_GetFPS_HDR_DOL_LEF(ms_cus_sensor* handle)
-{
-    imx334_params* params = (imx334_params*)handle->private_data;
-    u32 max_fps = handle->video_res_supported.res[handle->video_res_supported.ulcur_res].max_fps;
-    u32 tVts = (params->tVts_reg[0].data << 16) | (params->tVts_reg[1].data << 8) | (params->tVts_reg[2].data << 0);
-
-    if (params->expo.fps >= 1000)
-        params->expo.preview_fps = (vts_30fps_HDR_DOL * max_fps * 1000) / tVts;
-    else
-        params->expo.preview_fps = (vts_30fps_HDR_DOL * max_fps) / tVts;
-
-    return params->expo.preview_fps;
-}
-
-static int pCus_SetFPS_HDR_DOL_LEF(ms_cus_sensor* handle, u32 fps)
-{
-    u32 vts = 0;
-    imx334_params* params = (imx334_params*)handle->private_data;
-    u32 max_fps = handle->video_res_supported.res[handle->video_res_supported.ulcur_res].max_fps;
-    u32 min_fps = handle->video_res_supported.res[handle->video_res_supported.ulcur_res].min_fps;
-
-    if (fps >= min_fps && fps <= max_fps) {
-        params->expo.fps = fps;
-        params->expo.vts = (vts_30fps_HDR_DOL * max_fps) / fps;
-    } else if ((fps >= (min_fps * 1000)) && (fps <= (max_fps * 1000))) {
-        params->expo.fps = fps;
-        params->expo.vts = (vts_30fps_HDR_DOL * (max_fps * 1000)) / fps;
-    } else {
-        // params->expo.vts=vts_30fps;
-        // params->expo.fps=30;
-        SENSOR_DMSG("[%s] FPS %d out of range.\n", __FUNCTION__, fps);
-        return FAIL;
-    }
-
-    if (params->expo.expo_lines > 2 * params->expo.vts - params->max_rhs1 - 18) {
-        vts = (params->expo.expo_lines + params->max_rhs1 + 18) / 2;
-    } else {
-        vts = params->expo.vts;
-    }
-
-    pCus_SetAEUSecsHDR_DOL_LEF(handle, params->expo.expo_lef_us);
-
-    return SUCCESS;
-}
-
-static int imx334_SetPatternMode_hdr_dol_lef(ms_cus_sensor* handle, u32 mode)
-{
-    return SUCCESS;
-}
-
-static int pCus_AEStatusNotifyHDR_DOL_LEF(ms_cus_sensor* handle, CUS_CAMSENSOR_AE_STATUS_NOTIFY status)
-{
-    imx334_params* params = (imx334_params*)handle->private_data;
-
-    switch (status) {
-    case CUS_FRAME_INACTIVE:
-        break;
-    case CUS_FRAME_ACTIVE:
-        if (params->dirty || params->orien_dirty) {
-            SensorReg_Write(0x3001, 1);
-            SensorRegArrayW((I2C_ARRAY*)params->tExpo_shr_dol1_reg, ARRAY_SIZE(expo_shr_dol1_reg));
-            SensorRegArrayW((I2C_ARRAY*)params->tVts_reg, ARRAY_SIZE(vts_reg));
-            SensorRegArrayW((I2C_ARRAY*)params->tExpo_reg, ARRAY_SIZE(expo_reg));
-            SensorRegArrayW((I2C_ARRAY*)params->tExpo_rhs1_reg, ARRAY_SIZE(expo_rhs1_reg));
-            SensorRegArrayW((I2C_ARRAY*)params->tGain_hdr_dol_lef_reg, ARRAY_SIZE(gain_HDR_DOL_LEF_reg));
-            SensorRegArrayW((I2C_ARRAY*)params->tGain_hdr_dol_sef_reg, ARRAY_SIZE(gain_HDR_DOL_SEF1_reg));
-
-            if (params->orien_dirty) {
-                DoOrien(handle, handle->orient);
-                params->orien_dirty = false;
-            }
-            SensorReg_Write(0x3001, 0);
-        }
-        break;
-    default:
-        break;
-    }
-    return SUCCESS;
-}
-
-static int pCus_GetAEUSecs_HDR_DOL_LEF(ms_cus_sensor* handle, u32* us)
-{
-    *us = 0;
-    return SUCCESS;
-}
-
-static int pCus_SetAEUSecsHDR_DOL_LEF(ms_cus_sensor* handle, u32 us)
-{
-    u32 qua_lines = 0, lines = 0, half_vts = 0, vts = 0, shr_dol0 = 0, fsc = 0;
-    imx334_params* params = (imx334_params*)handle->private_data;
-
-    qua_lines = (1000 * us) / Preview_line_period_HDR_DOL / 4;
-    // lines=us/Preview_line_period_HDR_DOL;
-    params->expo.expo_lef_us = us;
-
-    if (4 * qua_lines > 2 * params->expo.vts - params->max_rhs1 - 18) { // shs2 > max_rhs1 +2
-        half_vts = (4 * qua_lines + params->max_rhs1 + 19) / 4;
-    } else {
-        half_vts = params->expo.vts / 2;
-    }
-
-    SENSOR_DMSG("[%s] us %u, qua_lines %u, vts %u\n", __FUNCTION__,
-        us,
-        qua_lines,
-        params->expo.vts);
-
-    // exposure limit lines = fsc - (shs2 + 1) = fsc - 1 - ( rhs1 + 2 ~ fsc - 2) = 1 ~ fsc - 104 (rhs1 fix to 101)
-    vts = half_vts * 2;
-    fsc = half_vts * 4;
-    if (qua_lines < 1) // shs2 < fsc - 2
-        qua_lines = 1;
-    if (4 * qua_lines > fsc - params->max_rhs1 - 18)
-        qua_lines = (fsc - params->max_rhs1 - 18) / 4;
-
-    lines = 4 * qua_lines;
-    params->expo.expo_lines = lines;
-
-    shr_dol0 = fsc - lines;
-#if 0
-    printk("[%s] us %u, qua_lines %u, vts %u shr_dol0 %u\n", __FUNCTION__,
-                us,
-                qua_lines,
-                params->expo.vts,
-                shr_dol0
-                );
-#endif
-    params->tExpo_reg[0].data = (shr_dol0 >> 16) & 0x000f;
-    params->tExpo_reg[1].data = (shr_dol0 >> 8) & 0x00ff;
-    params->tExpo_reg[2].data = (shr_dol0 >> 0) & 0x00ff;
-
-    params->tVts_reg[0].data = (vts >> 16) & 0x000f;
-    params->tVts_reg[1].data = (vts >> 8) & 0x00ff;
-    params->tVts_reg[2].data = (vts >> 0) & 0x00ff;
-
-    params->dirty = true;
-    return SUCCESS;
-}
-
-static int pCus_GetAEGain_HDR_DOL_LEF(ms_cus_sensor* handle, u32* gain)
-{
-    *gain = 0;
-    return SUCCESS;
-}
-
-static int pCus_SetAEGainHDR_DOL_LEF(ms_cus_sensor* handle, u32 gain)
-{
-    imx334_params* params = (imx334_params*)handle->private_data;
-    u16 gain_reg = 0;
-
-    pCus_SetAEGainHDR_DOL_Calculate(gain, &gain_reg);
-    params->tGain_hdr_dol_lef_reg[0].data = gain_reg & 0x00ff;
-    params->tGain_hdr_dol_lef_reg[1].data = (gain_reg >> 8) & 0x0007;
-
-    SENSOR_DMSG("[%s] set gain/reg=%u/0x%x\n", __FUNCTION__, gain, params->tGain_hdr_dol_lef_reg[0].data);
-
-    params->dirty = true;
-    return SUCCESS;
-}
-
-static int pCus_GetAEMinMaxGain_HDR_DOL_LEF(ms_cus_sensor* handle, u32* min, u32* max)
-{
-    *min = handle->sat_mingain;
-    *max = SENSOR_MAX_GAIN;
-    return SUCCESS;
-}
-
-static int pCus_GetAEMinMaxUSecs_HDR_DOL_LEF(ms_cus_sensor* handle, u32* min, u32* max)
-{
-    *min = 1;
-    *max = 1000000 / imx334_mipi_linear[0].senout.min_fps;
-    return SUCCESS;
-}
-
-static int pCus_SetAEGain_cal_hdr_dol_lef(ms_cus_sensor* handle, u32 gain)
-{
-    return SUCCESS;
-}
-
-static int pCus_setCaliData_gain_linearity_hdr_dol_lef(ms_cus_sensor* handle, CUS_GAIN_GAP_ARRAY* pArray, u32 num)
-{
-    return SUCCESS;
-}
-
-static int IMX334_GetShutterInfo_hdr_dol_lef(struct __ms_cus_sensor* handle, CUS_SHUTTER_INFO* info)
-{
-    info->max = 1000000000 / imx334_mipi_linear[0].senout.min_fps;
-    info->min = (Preview_line_period_HDR_DOL * 4);
-    info->step = Preview_line_period_HDR_DOL * 4;
-    return SUCCESS;
-}
-
-static int cus_camsensor_init_handle_hdr_dol_lef(ms_cus_sensor* drv_handle)
-{
-    ms_cus_sensor* handle = drv_handle;
-    imx334_params* params;
-    s32 res;
-
-    if (!handle) {
-        SENSOR_DMSG("[%s] not enough memory!\n", __FUNCTION__);
-        return FAIL;
-    }
-
-    // private data allocation & init
-    if (handle->private_data == NULL) {
-        SENSOR_EMSG("[%s] Private data is empty!\n", __FUNCTION__);
-        return FAIL;
-    }
-    params = (imx334_params*)handle->private_data;
-    memcpy(params->tVts_reg, vts_reg, sizeof(vts_reg));
-    memcpy(params->tExpo_reg, expo_reg, sizeof(expo_reg));
-    memcpy(params->tGain_hdr_dol_lef_reg, gain_HDR_DOL_LEF_reg, sizeof(gain_HDR_DOL_LEF_reg));
-
-    ////////////////////////////////////
-    //    sensor model ID             //
-    ////////////////////////////////////
-    sprintf(handle->model_id, "IMX334_MIPI_HDR_LEF");
-
-    ////////////////////////////////////
-    //    i2c config                  //
-    ////////////////////////////////////
-    handle->i2c_cfg.mode = SENSOR_I2C_LEGACY; //(CUS_ISP_I2C_MODE) FALSE;
-    handle->i2c_cfg.fmt = SENSOR_I2C_FMT; // CUS_I2C_FMT_A16D16;
-    handle->i2c_cfg.address = SENSOR_I2C_ADDR; // 0x5a;
-    handle->i2c_cfg.speed = SENSOR_I2C_SPEED; // 320000;
-
-    ////////////////////////////////////
-    //    mclk                        //
-    ////////////////////////////////////
-    handle->mclk = Preview_MCLK_SPEED_HDR_DOL; // UseParaMclk(SENSOR_DRV_PARAM_MCLK());
-    // sensor_if->MCLK(0,1,handle->mclk);
-
-    ////////////////////////////////////
-    //    sensor interface info       //
-    ////////////////////////////////////
-    handle->isp_type = SENSOR_ISP_TYPE; // ISP_SOC;
-    // handle->data_fmt               = SENSOR_DATAFMT;   //CUS_DATAFMT_YUV;
-    handle->sif_bus = SENSOR_IFBUS_TYPE; // CUS_SENIF_BUS_PARL;
-    handle->data_prec = SENSOR_DATAPREC_DOL; // CUS_DATAPRECISION_8;
-    handle->data_mode = SENSOR_DATAMODE;
-    handle->bayer_id = SENSOR_BAYERID_HDR_DOL; // CUS_BAYER_GB;
-    handle->RGBIR_id = SENSOR_RGBIRID;
-    handle->orient = SENSOR_ORIT; // CUS_ORIT_M1F1;
-    // handle->YC_ODER     = SENSOR_YCORDER;   //CUS_SEN_YCODR_CY;
-    handle->interface_attr.attr_mipi.mipi_lane_num = SENSOR_MIPI_LANE_NUM_DOL;
-    handle->interface_attr.attr_mipi.mipi_data_format = CUS_SEN_INPUT_FORMAT_RGB; // RGB pattern.
-    handle->interface_attr.attr_mipi.mipi_yuv_order = 0; // don't care in RGB pattern.
-    handle->interface_attr.attr_mipi.mipi_hsync_mode = SENSOR_MIPI_HSYNC_MODE_HDR_DOL;
-    handle->interface_attr.attr_mipi.mipi_hdr_mode = CUS_HDR_MODE_SONY_DOL;
-    handle->interface_attr.attr_mipi.mipi_hdr_virtual_channel_num = 0; // Long frame
-
-    ////////////////////////////////////
-    //    resolution capability       //
-    ////////////////////////////////////
-    handle->video_res_supported.ulcur_res = 0; // default resolution index is 0.
-    for (res = 0; res < HDR_RES_END; res++) {
-        handle->video_res_supported.num_res = res + 1;
-        handle->video_res_supported.res[res].width = imx334_mipi_hdr[res].senif.preview_w;
-        handle->video_res_supported.res[res].height = imx334_mipi_hdr[res].senif.preview_h;
-        handle->video_res_supported.res[res].max_fps = imx334_mipi_hdr[res].senout.max_fps;
-        handle->video_res_supported.res[res].min_fps = imx334_mipi_hdr[res].senout.min_fps;
-        handle->video_res_supported.res[res].crop_start_x = imx334_mipi_hdr[res].senif.crop_start_X;
-        handle->video_res_supported.res[res].crop_start_y = imx334_mipi_hdr[res].senif.crop_start_y;
-        handle->video_res_supported.res[res].nOutputWidth = imx334_mipi_hdr[res].senout.width;
-        handle->video_res_supported.res[res].nOutputHeight = imx334_mipi_hdr[res].senout.height;
-        snprintf(handle->video_res_supported.res[res].strResDesc,
-			sizeof(handle->video_res_supported.res[res].strResDesc), "%s",
-			imx334_mipi_hdr[res].senstr.strResDesc);
-    }
-
-    ////////////////////////////////////
-    //    Sensor polarity             //
-    ////////////////////////////////////
-    handle->pwdn_POLARITY = SENSOR_PWDN_POL; // CUS_CLK_POL_NEG;
-    handle->reset_POLARITY = SENSOR_RST_POL; // CUS_CLK_POL_NEG;
-    // handle->VSYNC_POLARITY              = SENSOR_VSYNC_POL; //CUS_CLK_POL_POS;
-    // handle->HSYNC_POLARITY              = SENSOR_HSYNC_POL; //CUS_CLK_POL_POS;
-    handle->PCLK_POLARITY = SENSOR_PCLK_POL; // CUS_CLK_POL_POS);    // use '!' to clear board latch error
-
-    ////////////////////////////////////////
-    // Sensor Status Control and Get Info //
-    ////////////////////////////////////////
-    handle->pCus_sensor_release = cus_camsensor_release_handle;
-    handle->pCus_sensor_init = pCus_init_HDR_DOL_LEF;
-    handle->pCus_sensor_poweron = pCus_poweron_HDR_DOL_LEF;
-    handle->pCus_sensor_poweroff = pCus_poweroff_HDR_DOL_LEF;
-    handle->pCus_sensor_GetSensorID = pCus_GetSensorID_HDR_DOL_LEF;
-    handle->pCus_sensor_GetVideoResNum = pCus_GetVideoResNum;
-    handle->pCus_sensor_SetVideoRes = pCus_SetVideoRes_HDR_DOL_LEF;
-    handle->pCus_sensor_GetVideoRes = pCus_GetVideoRes;
-    handle->pCus_sensor_GetCurVideoRes = pCus_GetCurVideoRes;
-
-    handle->pCus_sensor_GetOrien = pCus_GetOrien; // pCus_GetOrien_HDR_DOL_LEF
-    handle->pCus_sensor_SetOrien = pCus_SetOrien; // pCus_SetOrien_HDR_DOL_LEF
-    handle->pCus_sensor_GetFPS = pCus_GetFPS_HDR_DOL_LEF;
-    handle->pCus_sensor_SetFPS = pCus_SetFPS_HDR_DOL_LEF;
-
-    handle->pCus_sensor_SetPatternMode = imx334_SetPatternMode_hdr_dol_lef;
-
-    ////////////////////////////////////
-    //    AE parameters               //
-    ////////////////////////////////////
-    handle->ae_gain_delay = SENSOR_GAIN_DELAY_FRAME_COUNT_HDR_DOL;
-    handle->ae_shutter_delay = SENSOR_SHUTTER_DELAY_FRAME_COUNT_HDR_DOL;
-    handle->ae_gain_ctrl_num = 2;
-    handle->ae_shutter_ctrl_num = 2;
-    handle->sat_mingain = SENSOR_MIN_GAIN;
-    // handle->dgain_remainder = 0;
-
-    ////////////////////////////////////
-    //  AE Control and Get Info       //
-    ////////////////////////////////////
-    handle->pCus_sensor_AEStatusNotify = pCus_AEStatusNotifyHDR_DOL_LEF;
-    handle->pCus_sensor_GetAEUSecs = pCus_GetAEUSecs_HDR_DOL_LEF;
-    handle->pCus_sensor_SetAEUSecs = pCus_SetAEUSecsHDR_DOL_LEF;
-    handle->pCus_sensor_GetAEGain = pCus_GetAEGain_HDR_DOL_LEF;
-    handle->pCus_sensor_SetAEGain = pCus_SetAEGainHDR_DOL_LEF;
-    handle->pCus_sensor_GetAEMinMaxGain = pCus_GetAEMinMaxGain_HDR_DOL_LEF;
-    handle->pCus_sensor_GetAEMinMaxUSecs = pCus_GetAEMinMaxUSecs_HDR_DOL_LEF;
-    // handle->pCus_sensor_GetDGainRemainder = pCus_GetDGainRemainder;
-
-    // sensor calibration
-    handle->pCus_sensor_SetAEGain_cal = pCus_SetAEGain_cal_hdr_dol_lef;
-    handle->pCus_sensor_setCaliData_gain_linearity = pCus_setCaliData_gain_linearity_hdr_dol_lef;
-    handle->pCus_sensor_GetShutterInfo = IMX334_GetShutterInfo_hdr_dol_lef;
-
-    params->expo.vts = vts_30fps_HDR_DOL;
-    params->expo.expo_lines = 673;
-    params->expo.fps = 25;
     params->dirty = false;
 
     return SUCCESS;
