@@ -2321,11 +2321,12 @@ static int pCus_GetOrien(ms_cus_sensor* handle, CUS_CAMSENSOR_ORIT* orit)
     short Horiz_Inv = 0;
     short Verti_Inv = 0;
     short Orien_Mode = 0;
-    SensorReg_Read(0x304e, &Horiz_Inv);
-    SensorReg_Read(0x304f, &Verti_Inv);
+    if (SensorReg_Read(0x304e, &Horiz_Inv) != SUCCESS ||
+        SensorReg_Read(0x304f, &Verti_Inv) != SUCCESS)
+        return FAIL;
     Horiz_Inv &= 0x01;
     Verti_Inv &= 0X01;
-    Orien_Mode = Horiz_Inv | (Verti_Inv << 2);
+    Orien_Mode = Horiz_Inv | (Verti_Inv << 1);
     switch (Orien_Mode) {
     case 0x00:
         *orit = CUS_ORIT_M0F0;
@@ -2497,6 +2498,9 @@ static int pCus_GetFPS_HDR_DOL_SEF1(ms_cus_sensor* handle)
     u32 max_fps = handle->video_res_supported.res[handle->video_res_supported.ulcur_res].max_fps;
     u32 tVts = (params->tVts_reg[0].data << 16) | (params->tVts_reg[1].data << 8) | (params->tVts_reg[2].data << 0);
 
+    if (!tVts || !vts_30fps_HDR_DOL)
+        return FAIL;
+
     if (params->expo.fps >= 1000)
         params->expo.preview_fps = (vts_30fps_HDR_DOL * max_fps * 1000) / tVts;
     else
@@ -2639,6 +2643,10 @@ static int pCus_SetAEUSecsHDR_DOL_SEF1(ms_cus_sensor* handle, u32 us)
     imx334_params* params = (imx334_params*)handle->private_data;
 
     params->expo.expo_sef_us = us;
+    /* Mode selection must establish timing before AE is used. */
+    if (!Preview_line_period_HDR_DOL || !params->expo.vts)
+        return FAIL;
+
     qua_lines = (1000 * us) / Preview_line_period_HDR_DOL / 4;
     vts = params->expo.vts;
     shs0 = (params->tExpo_reg[0].data << 16) | (params->tExpo_reg[1].data << 8) | (params->tExpo_reg[2].data << 0);
@@ -2970,6 +2978,8 @@ static int cus_camsensor_init_handle_hdr_dol_sef1(ms_cus_sensor* drv_handle)
     }
 
     params = (imx334_params*)handle->private_data;
+    /* Initialize the shared VTS cache on both HDR handles, as IMX415 does. */
+    memcpy(params->tVts_reg, vts_reg, sizeof(vts_reg));
     memcpy(params->tExpo_rhs1_reg, expo_rhs1_reg, sizeof(expo_rhs1_reg));
     memcpy(params->tExpo_shr_dol1_reg, expo_shr_dol1_reg, sizeof(expo_shr_dol1_reg));
     memcpy(params->tGain_hdr_dol_sef_reg, gain_HDR_DOL_SEF1_reg, sizeof(gain_HDR_DOL_SEF1_reg));
@@ -3110,6 +3120,9 @@ static int pCus_GetFPS_HDR_DOL_LEF(ms_cus_sensor* handle)
     u32 max_fps = handle->video_res_supported.res[handle->video_res_supported.ulcur_res].max_fps;
     u32 tVts = (params->tVts_reg[0].data << 16) | (params->tVts_reg[1].data << 8) | (params->tVts_reg[2].data << 0);
 
+    if (!tVts || !vts_30fps_HDR_DOL)
+        return FAIL;
+
     if (params->expo.fps >= 1000)
         params->expo.preview_fps = (vts_30fps_HDR_DOL * max_fps * 1000) / tVts;
     else
@@ -3176,6 +3189,7 @@ static int pCus_AEStatusNotifyHDR_DOL_LEF(ms_cus_sensor* handle, CUS_CAMSENSOR_A
                 params->orien_dirty = false;
             }
             SensorReg_Write(0x3001, 0);
+            params->dirty = false;
         }
         break;
     default:
@@ -3194,6 +3208,10 @@ static int pCus_SetAEUSecsHDR_DOL_LEF(ms_cus_sensor* handle, u32 us)
 {
     u32 qua_lines = 0, lines = 0, half_vts = 0, vts = 0, shr_dol0 = 0, fsc = 0;
     imx334_params* params = (imx334_params*)handle->private_data;
+
+    /* Mode selection must establish timing before AE is used. */
+    if (!Preview_line_period_HDR_DOL || !params->expo.vts)
+        return FAIL;
 
     qua_lines = (1000 * us) / Preview_line_period_HDR_DOL / 4;
     // lines=us/Preview_line_period_HDR_DOL;
